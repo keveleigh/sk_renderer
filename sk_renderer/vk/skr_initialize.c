@@ -491,6 +491,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL _skr_vk_debug_callback(
 	if (callback_data->messageIdNumber == -60244330  ) return VK_FALSE;
 	if (callback_data->messageIdNumber ==  533026821 ) return VK_FALSE; // gl_Layer ?
 	if (callback_data->messageIdNumber ==  115483881 ) return VK_FALSE; // Geometry shader req, might need attention
+	if (callback_data->messageIdNumber == -1520283006) return VK_FALSE; // NonSemantic.Shader.DebugInfo line/col mismatch from shader compiler
+	if (callback_data->messageIdNumber ==  1132206547) return VK_FALSE; // NonSemantic.Shader.DebugInfo line/col mismatch from shader compiler
 
 	const char *severity_str = severity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT ? "VERBOSE" :
 							   severity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT    ? "INFO"    :
