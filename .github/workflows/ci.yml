@@ -9,7 +9,7 @@ on:
 
 jobs:
   native-win32:
-    name: Build (Windows)
+    name: Build & Test (Windows)
     runs-on: windows-latest
     env:
       FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps_cache
@@ -31,6 +31,28 @@ jobs:
       run: |
         cmake -B build -DFETCHCONTENT_BASE_DIR=${{ env.FETCHCONTENT_BASE_DIR }}
         cmake --build build --config Release
+
+    - name: Install software Vulkan driver (Dozen)
+      # GitHub-hosted Windows runners have no GPU/Vulkan ICD. This installs
+      # Mesa's Dozen driver (Vulkan-on-D3D12), which works via WARP with no
+      # GPU required -- the Windows analog of Linux's mesa-vulkan-drivers.
+      run: winget install --id Microsoft.OpenCLGLVulkanCompatibilityPack -e --silent --accept-package-agreements --accept-source-agreements
+
+    - name: Install Vulkan SDK
+      run: winget install --id KhronosGroup.VulkanSDK -e --silent --accept-package-agreements --accept-source-agreements
+
+    - name: Run Tests (with Validation Layers)
+      shell: pwsh
+      run: |
+        $vulkanSdk = Get-ChildItem -Path "C:\VulkanSDK" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+        if ($vulkanSdk) {
+          $env:VK_LAYER_PATH = "$($vulkanSdk.FullName)\Bin"
+        }
+        $env:VK_INSTANCE_LAYERS = "VK_LAYER_KHRONOS_validation"
+        # Temporary suppression for upstream Vulkan-ValidationLayers bug where cubemap
+        # transfers on (0,0,0) granularity queues falsely require extent.depth == layerCount (6).
+        $env:VK_LAYER_KHRONOS_VALIDATION_IGNORED_MESSAGES = "VUID-vkCmdCopyBufferToImage-imageOffset-07738,VUID-vkCmdCopyImage-srcOffset-01783,VUID-vkCmdCopyImage-dstOffset-01784"
+        & ".\build\example\Release\sk_renderer_test.exe" -testall
 
   native-macos:
     name: Build (macOS)
