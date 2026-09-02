@@ -100,16 +100,17 @@ this machine (no `/home/kurtis/sk_renderer` exists).
 
 ## Running sk_renderer's own C example directly
 
-This repo's own standalone example (`example/`, built from this checkout's
-`build-linux/` tree, *not* via StereoKit's CPM cache) exercises a much wider
-variety of shader content than StereoKit's headless harness — it's what
-caught the Google-extension VUID above. Build just the `sk_renderer_test`
-target (the `example_xr` target fails to configure here — missing
-`xcb/glx.h` — but that's unrelated and out of scope to fix):
+This repo's own standalone example (`example/`, built from a checkout of
+*this* repo — a `build-linux/` CMake build tree, not StereoKit's CPM
+cache) exercises a much wider variety of shader content than StereoKit's
+headless harness — it's what caught the Google-extension VUID above.
+Build just the `sk_renderer_test` target (the `example_xr` target fails to
+configure here — missing `xcb/glx.h` — but that's unrelated and out of
+scope to fix):
 
 ```bash
 wsl -d Ubuntu-22.04 -- bash -lc '
-cd /home/kurtis/sk_renderer_repro/build-linux
+cd <path-to-sk_renderer-checkout>/build-linux
 cmake --build . --target sk_renderer_test -j$(nproc)
 '
 ```
@@ -121,7 +122,7 @@ still a real windowed app):
 
 ```bash
 wsl -d Ubuntu-22.04 -- bash -lc '
-cd /home/kurtis/sk_renderer_repro/build-linux
+cd <path-to-sk_renderer-checkout>/build-linux
 export VK_LAYER_PATH=/home/kurtis/vklayer_local/extracted/usr/share/vulkan/explicit_layer.d
 export LD_LIBRARY_PATH=/home/kurtis/vklayer_local/extracted/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
 export VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
@@ -146,7 +147,7 @@ issue: it's a plain `SIGSEGV` on one of llvmpipe's own JIT worker threads
 
 ```bash
 wsl -d Ubuntu-22.04 -- bash -lc '
-cd /home/kurtis/sk_renderer_repro/build-linux
+cd <path-to-sk_renderer-checkout>/build-linux
 gdb -q -batch -ex run -ex bt --args ./example/sk_renderer_test -testall -frames 15 > ~/example_gdb.log 2>&1
 '
 ```
