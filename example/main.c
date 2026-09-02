@@ -37,6 +37,20 @@ static bool _ska_file_read(const char* filename, void** out_data, size_t* out_si
 	return false;
 }
 
+static int _vulkan_error_count = 0;
+
+static void _main_log_callback(skr_log_ level, const char* text) {
+	if (level == skr_log_critical && strstr(text, "[Vulkan:ERROR:")) {
+		_vulkan_error_count++;
+	}
+	const char* prefix =
+		level == skr_log_info     ? "[skr:info] " :
+		level == skr_log_warning  ? "[skr:warn] " :
+		level == skr_log_critical ? "[skr:crit] " : "[skr:unkn] ";
+	printf("%s%s\n", prefix, text);
+	fflush(stdout);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Backend-specific surface glue. Vulkan surfaces come from
 // ska_vk_create_surface, WebGPU surfaces from ska_wgpu_create_surface. Neither
@@ -429,6 +443,8 @@ int main(int argc, char* argv[]) {
 	settings.wgpu_device   = emscripten_webgpu_get_device();
 #endif
 
+	skr_callback_log(_main_log_callback);
+
 	if (!skr_init(settings)) {
 		su_log(su_log_critical, "Failed to initialize sk_renderer!");
 		ska_window_destroy(window);
@@ -525,6 +541,11 @@ int main(int argc, char* argv[]) {
 	_loop.cycle_resolve = cycle_resolve;
 
 	ska_run(main_frame, &_loop);
+
+	if (_vulkan_error_count > 0) {
+		su_log(su_log_critical, "FAILED: %d Vulkan validation error(s) encountered during run.", _vulkan_error_count);
+		return 1;
+	}
 
 	return 0;
 }
