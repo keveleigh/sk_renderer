@@ -100,12 +100,17 @@ jobs:
     - name: Install Prerequisites
       run: |
         sudo apt-get update
-        sudo apt-get install -y clang llvm lld ninja-build pkg-config libx11-dev libxfixes-dev libxrandr-dev libxcursor-dev libxi-dev libfontconfig-dev libwayland-dev libxkbcommon-dev libdecor-0-dev mesa-vulkan-drivers
+        sudo apt-get install -y clang llvm lld ninja-build pkg-config libx11-dev libxfixes-dev libxrandr-dev libxcursor-dev libxi-dev libfontconfig-dev libwayland-dev libxkbcommon-dev libdecor-0-dev mesa-vulkan-drivers vulkan-validationlayers xvfb
 
     - name: Build Native Linux x64
       run: |
         cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_BASE_DIR=${{ env.FETCHCONTENT_BASE_DIR }}
         cmake --build build --config Release
+
+    - name: Run Tests (with Validation Layers)
+      run: |
+        export VK_INSTANCE_LAYERS="VK_LAYER_KHRONOS_validation"
+        xvfb-run -a ./build/example/sk_renderer_test -testall
 
   native-android:
     name: Build (Android)
