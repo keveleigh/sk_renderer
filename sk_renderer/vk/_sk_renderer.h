@@ -285,6 +285,13 @@ typedef struct {
 	int32_t                  max_msaa_samples;       // Maximum supported MSAA sample count
 	uint64_t                 frame_timestamps[SKR_MAX_FRAMES_IN_FLIGHT][2];  // [frame][start/end]
 	bool                     timestamps_valid[SKR_MAX_FRAMES_IN_FLIGHT];
+	// Submission that last wrote this flight_idx's queries. The command ring
+	// (skr_MAX_COMMAND_RING slots) can run several frames ahead of the GPU
+	// before its own fence wait ever triggers, but the query pool only has
+	// SKR_MAX_FRAMES_IN_FLIGHT slots - frame_begin waits on this future before
+	// resetting/rewriting a flight_idx so it can't outrun that flight's own
+	// still-pending GPU writes (QueryNotReset).
+	skr_future_t             query_future[SKR_MAX_FRAMES_IN_FLIGHT];
 
 	// CPU timing (wall-clock time for frame work, excluding vsync)
 	uint64_t                 cpu_frame_start_ns  [SKR_MAX_FRAMES_IN_FLIGHT];
@@ -422,6 +429,7 @@ VkImageLayout         _skr_tex_sample_layout                (const skr_tex_t*   
 VkImageLayout         _skr_tex_attachment_layout            (const skr_tex_t*     tex); // Canonical layout for using a texture as a render-pass attachment (color vs depth, picked from aspect_mask)
 void                  _skr_tex_transition_enqueue           (      skr_tex_t* ref_tex, uint8_t type); // Deferred texture transition queue (to avoid in-renderpass barriers) type: 0=shader_read, 1=storage
 void                  _skr_tex_transition_dequeue           (      skr_tex_t* ref_tex);               // Remove from deferred queue (called on texture destroy)
+void                  _skr_tex_stamp_last_used               (      skr_tex_t* ref_tex); // Records the calling thread's active ring slot+generation as this texture's last GPU use
 
 // vkDeviceWaitIdle with every queue mutex held; the plain call implicitly
 // uses all queues and races worker-thread submits (skr_initialize.c)

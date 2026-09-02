@@ -122,6 +122,14 @@ typedef struct skr_tex_t {
 	bool                   is_transient_discard; // True for non-readable depth/MSAA (always use UNDEFINED)
 	bool                   is_external;          // True if image/memory are externally owned (don't destroy)
 
+	// Last-use tracking for safe deferred destroy. Stamped by every helper that
+	// records a GPU command referencing this image (transitions, barriers,
+	// descriptor writes) with the calling thread's currently-active command
+	// ring slot. skr_tex_destroy consults this instead of guessing a thread's
+	// current slot at destroy time (VUID-vkDestroyImage-image-01000).
+	void*                  last_used_slot;       // _skr_cmd_ring_slot_t* (opaque here; not yet declared at this point in the include order)
+	uint64_t               last_used_generation; // that slot's generation at stamp time
+
 	// YCbCr conversion (Vulkan 1.1) for opaque YUV textures (e.g. AHB video frames)
 	VkSamplerYcbcrConversion ycbcr_conversion;   // VK_NULL_HANDLE if unused
 	VkSampler                ycbcr_sampler;       // Immutable sampler with YCbCr conversion baked in (VK_NULL_HANDLE if unused)

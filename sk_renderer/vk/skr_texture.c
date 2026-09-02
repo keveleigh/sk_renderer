@@ -332,9 +332,26 @@ bool _skr_tex_needs_transition(const skr_tex_t* tex, uint8_t type) {
 	return tex->current_layout != target_layout;
 }
 
+// Records the calling thread's currently-active command ring slot+generation
+// as this texture's last GPU use. skr_tex_destroy consults this to pick a
+// destroy list tied to the resource's actual last use, instead of guessing
+// from whatever slot happens to be active on the *destroying* thread
+// (VUID-vkDestroyImage-image-01000).
+void _skr_tex_stamp_last_used(skr_tex_t* ref_tex) {
+	_skr_vk_thread_t*     thr    = _skr_cmd_get_thread();
+	_skr_cmd_ring_slot_t* active = thr ? thr->active_cmd : NULL;
+	if (!active) active = _skr_vk.thread_pools[0].active_cmd;
+	if (!active) return;
+
+	ref_tex->last_used_slot       = active;
+	ref_tex->last_used_generation = active->generation;
+}
+
 // Notify the system that a render pass has performed an implicit layout transition
 // This updates tracked state without issuing a barrier
 void _skr_tex_transition_notify_layout(skr_tex_t* ref_tex, VkImageLayout new_layout) {
+	_skr_tex_stamp_last_used(ref_tex);
+
 	// Don't update transient discard textures - they conceptually stay in UNDEFINED
 	if (!ref_tex->is_transient_discard) {
 		ref_tex->current_layout = new_layout;
@@ -345,6 +362,7 @@ void _skr_tex_transition_notify_layout(skr_tex_t* ref_tex, VkImageLayout new_lay
 // General-purpose automatic transition - tracks state and inserts barrier if needed
 void _skr_tex_transition(VkCommandBuffer cmd, skr_tex_t* ref_tex, VkImageLayout new_layout, VkPipelineStageFlags dst_stage, VkAccessFlags dst_access) {
 	if (!ref_tex->image) return;
+	_skr_tex_stamp_last_used(ref_tex);
 
 	// For transient discard textures (non-readable depth/MSAA), always use UNDEFINED as old layout
 	VkImageLayout old_layout = ref_tex->is_transient_discard ? VK_IMAGE_LAYOUT_UNDEFINED : ref_tex->current_layout;
@@ -382,6 +400,7 @@ void _skr_tex_transition(VkCommandBuffer cmd, skr_tex_t* ref_tex, VkImageLayout 
 // where the layout is correct but the data may not yet be visible.
 void _skr_tex_barrier(VkCommandBuffer cmd, skr_tex_t* ref_tex, VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkPipelineStageFlags dst_stage, VkAccessFlags dst_access) {
 	if (!ref_tex->image) return;
+	_skr_tex_stamp_last_used(ref_tex);
 
 	VkImageLayout layout = ref_tex->is_transient_discard
 		? VK_IMAGE_LAYOUT_UNDEFINED
@@ -413,6 +432,7 @@ void _skr_tex_transition_queue_family(VkCommandBuffer cmd, skr_tex_t* ref_tex,
                                      uint32_t src_queue_family, uint32_t dst_queue_family,
                                      VkImageLayout layout) {
 	if (!ref_tex || !ref_tex->image || src_queue_family == dst_queue_family) return;
+	_skr_tex_stamp_last_used(ref_tex);
 
 	VkImageLayout old_layout = ref_tex->is_transient_discard ? VK_IMAGE_LAYOUT_UNDEFINED : ref_tex->current_layout;
 	VkAccessFlags src_access = _layout_to_access_flags(old_layout);
@@ -464,6 +484,7 @@ void _skr_barrier_batch_init(_skr_barrier_batch_t* batch) {
 
 void _skr_barrier_batch_add(_skr_barrier_batch_t* batch, VkCommandBuffer cmd, skr_tex_t* ref_tex, VkImageLayout new_layout, VkPipelineStageFlags dst_stage, VkAccessFlags dst_access) {
 	if (!ref_tex || !ref_tex->image) return;
+	_skr_tex_stamp_last_used(ref_tex);
 
 	VkImageLayout old_layout = ref_tex->is_transient_discard ? VK_IMAGE_LAYOUT_UNDEFINED : ref_tex->current_layout;
 
@@ -1265,15 +1286,39 @@ void skr_tex_destroy(skr_tex_t* ref_tex) {
 	if (ref_tex->ycbcr_sampler == VK_NULL_HANDLE) {
 		_skr_sampler_cache_release(ref_tex->sampler_settings);
 	}
-	_skr_cmd_destroy_image_view (NULL, ref_tex->view);
 
-	// Only destroy image/memory if we own them (not external).
-	// Destroy list executes LIFO, so push memory FIRST and image SECOND —
-	// vkFreeMemory must run after vkDestroyImage, otherwise the validation
-	// layer reports the memory as still bound to the image (VUID-vkFreeMemory-memory-00677).
-	if (!ref_tex->is_external) {
-		_skr_cmd_destroy_memory(NULL, ref_tex->memory);
-		_skr_cmd_destroy_image (NULL, ref_tex->image);
+	// view/memory/image are resolved against the ring slot that actually last
+	// recorded a GPU command referencing this image (stamped by every
+	// transition/barrier/descriptor-write call site), not a guess based on
+	// whatever thread happens to be calling skr_tex_destroy
+	// (VUID-vkDestroyImage-image-01000).
+	_skr_cmd_ring_slot_t* last_slot = (_skr_cmd_ring_slot_t*)ref_tex->last_used_slot;
+	bool pending = last_slot && last_slot->alive && last_slot->generation == ref_tex->last_used_generation;
+
+	if (pending) {
+		// Still the same generation that used this texture — defer to that
+		// slot's own destroy list; it only runs once that slot's own fence is
+		// waited on (ring-slot reuse in _skr_cmd_ring_begin).
+		_skr_cmd_destroy_image_view(&last_slot->destroy_list, ref_tex->view);
+
+		// Only destroy image/memory if we own them (not external).
+		// Destroy list executes LIFO, so push memory FIRST and image SECOND —
+		// vkFreeMemory must run after vkDestroyImage, otherwise the validation
+		// layer reports the memory as still bound to the image (VUID-vkFreeMemory-memory-00677).
+		if (!ref_tex->is_external) {
+			_skr_cmd_destroy_memory(&last_slot->destroy_list, ref_tex->memory);
+			_skr_cmd_destroy_image (&last_slot->destroy_list, ref_tex->image);
+		}
+	} else {
+		// Slot already moved to a newer generation (or texture was never
+		// used) — _skr_cmd_ring_begin only advances a slot's generation
+		// *after* vkWaitForFences for its previous generation succeeds, so
+		// the GPU is provably done with this resource. Safe to destroy now.
+		vkDestroyImageView(_skr_vk.device, ref_tex->view, NULL);
+		if (!ref_tex->is_external) {
+			vkFreeMemory  (_skr_vk.device, ref_tex->memory, NULL);
+			vkDestroyImage(_skr_vk.device, ref_tex->image,  NULL);
+		}
 	}
 
 	// Deferred destroy YCbCr resources. The destroy list executes in LIFO order,

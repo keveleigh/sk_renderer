@@ -667,6 +667,7 @@ int32_t _skr_material_add_writes(const skr_material_bind_t* binds, uint32_t bind
 			skr_tex_t* tex = _skr_vk.global_textures[slot-SKR_BIND_SHIFT_TEXTURE];
 			if (!tex)  tex = binds[i].texture;
 			if (!tex) return (int32_t)i;
+			_skr_tex_stamp_last_used(tex);
 
 			// imageLayout must match the layout the GPU sees when the descriptor
 			// is accessed (VUID-VkDescriptorImageInfo-imageLayout-00344). We
@@ -738,6 +739,7 @@ int32_t _skr_material_add_writes(const skr_material_bind_t* binds, uint32_t bind
 			skr_tex_t* tex = _skr_vk.global_textures[slot-SKR_BIND_SHIFT_UAV];
 			if (!tex)  tex = binds[i].texture;
 			if (!tex) return (int32_t)i;
+			_skr_tex_stamp_last_used(tex);
 
 			// _skr_tex_sample_layout returns GENERAL for compute-flagged textures —
 			// same value the spec mandates for STORAGE_IMAGE, but routes through the
@@ -762,6 +764,7 @@ int32_t _skr_material_add_writes(const skr_material_bind_t* binds, uint32_t bind
 
 			skr_tex_t* tex = binds[i].texture;
 			if (!tex) return (int32_t)i;
+			_skr_tex_stamp_last_used(tex);
 
 			ref_image_infos[*ref_image_ct] = (VkDescriptorImageInfo){
 				.sampler     = VK_NULL_HANDLE,

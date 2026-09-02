@@ -202,6 +202,13 @@ void skr_renderer_frame_begin(void) {
 	_skr_vk.cpu_frame_start_ns[_skr_vk.flight_idx] = _skr_time_get_ns();
 	_skr_vk.cpu_frame_wait_ns [_skr_vk.flight_idx] = 0;  // Reset wait time accumulator
 
+	// This flight_idx's queries were last written SKR_MAX_FRAMES_IN_FLIGHT frames
+	// ago. The command ring can run several frames further ahead than that
+	// before its own fence wait kicks in, so without this wait a slow GPU can
+	// still have that older write in flight when we reset/rewrite the same
+	// query indices here (QueryNotReset).
+	skr_future_wait(&_skr_vk.query_future[_skr_vk.flight_idx]);
+
 	// Reset and write start timestamp
 	uint32_t query_start = _skr_vk.flight_idx * SKR_QUERIES_PER_FRAME;
 	vkCmdResetQueryPool(cmd, _skr_vk.timestamp_pool, query_start, SKR_QUERIES_PER_FRAME);
@@ -249,6 +256,10 @@ void skr_renderer_frame_end(skr_surface_t** opt_surfaces, uint32_t count) {
 
 	// Record CPU end time (after submission, before present/vsync)
 	_skr_vk.cpu_frame_end_ns[_skr_vk.flight_idx] = _skr_time_get_ns();
+
+	// Remember this submission so a future frame_begin reusing this flight_idx
+	// can wait for its query writes to retire before resetting them.
+	_skr_vk.query_future[_skr_vk.flight_idx] = future;
 
 	// Record future in all surfaces for their current frame_idx
 	for (uint32_t i = 0; i < count; i++) {
