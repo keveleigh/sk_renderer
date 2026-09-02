@@ -1305,22 +1305,24 @@ static void _scene_gi_render(scene_t* base, int32_t width, int32_t height, skr_r
 		float probe_radius = fminf(fminf(cell_size.x, cell_size.y), cell_size.z) * 0.07f;
 
 		int32_t total_probes = GI_GRID_SIZE * GI_GRID_SIZE * GI_GRID_SIZE;
-		float4  probe_data[GI_GRID_SIZE * GI_GRID_SIZE * GI_GRID_SIZE];
-		int32_t i = 0;
-
-		for (int32_t z = 0; z < GI_GRID_SIZE; z++) {
-			for (int32_t y = 0; y < GI_GRID_SIZE; y++) {
-				for (int32_t x = 0; x < GI_GRID_SIZE; x++) {
-					probe_data[i++] = (float4){
-						scene->gi_volume_min.x + (x + 0.5f) * cell_size.x,
-						scene->gi_volume_min.y + (y + 0.5f) * cell_size.y,
-						scene->gi_volume_min.z + (z + 0.5f) * cell_size.z,
-						probe_radius,
-					};
+		float4* probe_data   = (float4*)malloc(sizeof(float4) * total_probes);
+		if (probe_data) {
+			int32_t i = 0;
+			for (int32_t z = 0; z < GI_GRID_SIZE; z++) {
+				for (int32_t y = 0; y < GI_GRID_SIZE; y++) {
+					for (int32_t x = 0; x < GI_GRID_SIZE; x++) {
+						probe_data[i++] = (float4){
+							scene->gi_volume_min.x + (x + 0.5f) * cell_size.x,
+							scene->gi_volume_min.y + (y + 0.5f) * cell_size.y,
+							scene->gi_volume_min.z + (z + 0.5f) * cell_size.z,
+							probe_radius,
+						};
+					}
 				}
 			}
+			skr_render_list_add(ref_render_list, &scene->gi_debug_mesh, &scene->gi_debug_material, probe_data, sizeof(float4), total_probes);
+			free(probe_data);
 		}
-		skr_render_list_add(ref_render_list, &scene->gi_debug_mesh, &scene->gi_debug_material, probe_data, sizeof(float4), total_probes);
 	}
 
 	// --- Voxel cube visualization ---
@@ -1333,23 +1335,25 @@ static void _scene_gi_render(scene_t* base, int32_t width, int32_t height, skr_r
 		};
 		skr_material_set_param(&scene->gi_debug_voxel_material, "cell_size", sksc_shader_var_float, 3, &cell_size);
 
-		int32_t total = GI_GRID_SIZE * GI_GRID_SIZE * GI_GRID_SIZE;
-		float4  voxel_data[GI_GRID_SIZE * GI_GRID_SIZE * GI_GRID_SIZE];
-		int32_t i = 0;
-
-		for (int32_t z = 0; z < GI_GRID_SIZE; z++) {
-			for (int32_t y = 0; y < GI_GRID_SIZE; y++) {
-				for (int32_t x = 0; x < GI_GRID_SIZE; x++) {
-					voxel_data[i++] = (float4){
-						scene->gi_volume_min.x + (x + 0.5f) * cell_size.x,
-						scene->gi_volume_min.y + (y + 0.5f) * cell_size.y,
-						scene->gi_volume_min.z + (z + 0.5f) * cell_size.z,
-						0,
-					};
+		int32_t total      = GI_GRID_SIZE * GI_GRID_SIZE * GI_GRID_SIZE;
+		float4* voxel_data = (float4*)malloc(sizeof(float4) * total);
+		if (voxel_data) {
+			int32_t i = 0;
+			for (int32_t z = 0; z < GI_GRID_SIZE; z++) {
+				for (int32_t y = 0; y < GI_GRID_SIZE; y++) {
+					for (int32_t x = 0; x < GI_GRID_SIZE; x++) {
+						voxel_data[i++] = (float4){
+							scene->gi_volume_min.x + (x + 0.5f) * cell_size.x,
+							scene->gi_volume_min.y + (y + 0.5f) * cell_size.y,
+							scene->gi_volume_min.z + (z + 0.5f) * cell_size.z,
+							0,
+						};
+					}
 				}
 			}
+			skr_render_list_add(ref_render_list, &scene->gi_debug_voxel_mesh, &scene->gi_debug_voxel_material, voxel_data, sizeof(float4), total);
+			free(voxel_data);
 		}
-		skr_render_list_add(ref_render_list, &scene->gi_debug_voxel_mesh, &scene->gi_debug_voxel_material, voxel_data, sizeof(float4), total);
 	}
 }
 
