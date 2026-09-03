@@ -108,10 +108,30 @@ jobs:
         cmake --build build --config Release
 
     - name: Run Tests (with Validation Layers)
+      id: run_tests
       run: |
         export VK_INSTANCE_LAYERS="VK_LAYER_KHRONOS_validation"
         export VK_KHRONOS_VALIDATION_MESSAGE_ID_FILTER="VUID-vkCmdCopyBufferToImage-imageOffset-07738,VUID-vkCmdCopyImage-srcOffset-01783,VUID-vkCmdCopyImage-dstOffset-01784"
         xvfb-run -a ./build/example/sk_renderer_test -testall
+
+    - name: Diagnose crash (llvmpipe JIT SIGSEGV suspected)
+      # The job already failed via the step above; this only adds diagnostics
+      # to the log and never changes the job's pass/fail result.
+      if: failure() && steps.run_tests.outcome == 'failure'
+      continue-on-error: true
+      run: |
+        sudo apt-get install -y gdb
+        export VK_INSTANCE_LAYERS="VK_LAYER_KHRONOS_validation"
+        export VK_KHRONOS_VALIDATION_MESSAGE_ID_FILTER="VUID-vkCmdCopyBufferToImage-imageOffset-07738,VUID-vkCmdCopyImage-srcOffset-01783,VUID-vkCmdCopyImage-dstOffset-01784"
+
+        echo "::group::Retry with LP_NUM_THREADS=0 (rules out an llvmpipe JIT worker-thread race)"
+        LP_NUM_THREADS=0 xvfb-run -a ./build/example/sk_renderer_test -testall
+        echo "exit code: $?"
+        echo "::endgroup::"
+
+        echo "::group::Retry under gdb for a backtrace of every thread"
+        xvfb-run -a gdb -q -batch -ex run -ex "thread apply all bt" -ex quit --args ./build/example/sk_renderer_test -testall
+        echo "::endgroup::"
 
   native-android:
     name: Build (Android)
