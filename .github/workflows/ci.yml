@@ -120,6 +120,7 @@ jobs:
       if: failure() && steps.run_tests.outcome == 'failure'
       continue-on-error: true
       run: |
+        set +e
         sudo apt-get install -y gdb
         export VK_INSTANCE_LAYERS="VK_LAYER_KHRONOS_validation"
         export VK_KHRONOS_VALIDATION_MESSAGE_ID_FILTER="VUID-vkCmdCopyBufferToImage-imageOffset-07738,VUID-vkCmdCopyImage-srcOffset-01783,VUID-vkCmdCopyImage-dstOffset-01784"
